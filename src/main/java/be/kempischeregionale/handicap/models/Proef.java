@@ -5,11 +5,16 @@ public class Proef {
     private String wedstrijd;
     private String proef;
     private String type;
+    private boolean pony;
 
     public Proef(String wedstrijd, String proef, String type) {
+        this(wedstrijd, proef, type, false);
+    }
+    public Proef(String wedstrijd, String proef, String type, boolean pony) {
         this.wedstrijd = wedstrijd;
         this.proef = proef;
         this.type = type;
+        this.pony = pony;
     }
 
     public String getKey() {
@@ -38,5 +43,13 @@ public class Proef {
 
     public void setType(String type) {
         this.type = type;
+    }
+
+    public boolean isPony() {
+        return pony;
+    }
+
+    public void setPony(boolean pony) {
+        this.pony = pony;
     }
 }
