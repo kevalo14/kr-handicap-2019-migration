@@ -6,29 +6,30 @@ import be.kempischeregionale.handicap.models.Punten;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.Reader;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.io.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 
 //@SpringBootApplication
 public class HandicapReadJumping {
 
 	private static Logger LOG = LoggerFactory.getLogger(HandicapReadJumping.class);
 
-	private static String huidige_jumping = "5038";
-	private static String vorige_jumping = "5037";
-
-	private static final String DIRECTORY_INPUT = "C:\\handicap\\src\\main\\resources\\files\\input\\";
-    private static final String DIRECTORY_OUTPUT = "C:\\handicap\\src\\main\\resources\\files\\output\\";
+	private static final String DIRECTORY_INPUT = "C:\\handicapkr\\";
+    private static final String DIRECTORY_OUTPUT = "C:\\handicapkr\\output\\";
+	private static final String DIRECTORY_BACKUP = "C:\\handicapkr\\backup\\";
 
 	public static Map<String, String> ruiters = new HashMap<>();
 	public static Map<String, String> paarden = new HashMap<>();
@@ -40,33 +41,95 @@ public class HandicapReadJumping {
 	public static Map<String, Integer> paardVanHetJaar = new HashMap<>();
 
 	public static void main(String[] args) throws Exception {
-//		SpringApplication.run(HandicapApplication.class, args);
+		String jumpingNummer = args[0];
 
-		proeven.put("5001_3", new Proef("5001", "3", "A"));
-		proeven.put("5001_4", new Proef("5001", "4", "A"));
-		proeven.put("5001_5", new Proef("5001", "5", "1"));
-		proeven.put("5001_6", new Proef("5001", "6", "2"));
-		proeven.put("5001_7", new Proef("5001", "7", "1"));
-		proeven.put("5001_8", new Proef("5001", "8", "2"));
-		proeven.put("5041_7", new Proef("5001", "7", "A"));
-		proeven.put("5041_10", new Proef("5001", "10", "A"));
-		proeven.put("5041_11", new Proef("5001", "11", "B"));
-		proeven.put("5041_12", new Proef("5001", "12", "A"));
-		proeven.put("5041_13", new Proef("5001", "13", "B"));
+		if (StringUtils.isEmpty(jumpingNummer)) {
+			LOG.error("Geef een jumpingnummer op !");
+			return;
+		}
 
-		readHandicap2018();
+		cleanupFolder();
+
+		readProeven();
 		readRuiters();
 		readPaarden();
+
+		readPreviousJumping();
+
 		readPaardVanHetJaar();
 
-		readJumping(huidige_jumping);
+		readJumping(jumpingNummer);
+
+		LOG.info("Bestanden succesvol ge-exporteerd !");
+	}
+
+	private static void cleanupFolder() {
+		LOG.info("Opkuisen output direcctory ...");
+		File dir =new File(DIRECTORY_OUTPUT);
+		for (File file: dir.listFiles()) {
+			if (!file.isDirectory()) {
+				file.delete();
+			}
+		}
+
+	}
+
+	private static String getFileVersionNumber() {
+		DateTimeFormatter timeColonFormatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+		return timeColonFormatter.format(LocalDateTime.now());
+	}
+
+	private static void readProeven() throws Exception {
+		LOG.info("Inlezen van proeven ...");
+
+        String fileProef = DIRECTORY_INPUT + "proeven.xlsx";
+
+        File excelFile = new File(fileProef);
+        FileInputStream fis = new FileInputStream(excelFile);
+
+        // we create an XSSF Workbook object for our XLSX Excel File
+        XSSFWorkbook workbook = new XSSFWorkbook(fis);
+		// we get first sheet
+		XSSFSheet sheet = workbook.getSheetAt(0);
+
+		// we iterate on rows
+		Iterator<Row> rowIt = sheet.iterator();
+		Row row = rowIt.next();
+
+		while(rowIt.hasNext()) {
+			row = rowIt.next();
+
+			String jumping = getCellValue(row.getCell(0));
+			String proef = getCellValue(row.getCell(1));
+			String type = getCellValue(row.getCell(2));
+			boolean isPony = getCellValue(row.getCell(3)).equalsIgnoreCase("pony");
+
+			proeven.put(jumping + "_" + proef, new Proef(jumping, proef, type, isPony));
+		}
+
+		workbook.close();
+		fis.close();
+	}
+
+	private static String getCellValue(Cell cell) {
+		String cellValue;
+		if ( CellType.NUMERIC == cell.getCellType()) {
+			cellValue = String.valueOf((int)cell.getNumericCellValue());
+		} else if ( CellType.STRING == cell.getCellType()) {
+			cellValue = cell.getStringCellValue();
+		} else {
+			throw new IllegalArgumentException("Incorrect input while reading proeven");
+		}
+		return cellValue;
 	}
 
 	private static void readRuiters() throws Exception {
+		LOG.info("Inlezen van ruiters ...");
+
 		String fileProef = DIRECTORY_INPUT +  "ruiters.csv";
 
 		Reader in = new FileReader(fileProef);
-		Iterable<CSVRecord> records = CSVFormat.DEFAULT.withFirstRecordAsHeader().withDelimiter(';').parse(in);
+		Iterable<CSVRecord> records = CSVFormat.DEFAULT.withDelimiter(';').parse(in);
 
 		for (CSVRecord record : records) {
 			String id = record.get(0);
@@ -77,10 +140,13 @@ public class HandicapReadJumping {
 	}
 
 	private static void readPaarden() throws Exception {
+		LOG.info("Inlezen van paarden ...");
+
 		String fileProef = DIRECTORY_INPUT + "paarden.csv";
 
 		Reader in = new FileReader(fileProef);
-		Iterable<CSVRecord> records = CSVFormat.DEFAULT.withFirstRecordAsHeader().withDelimiter(';').parse(in);
+		Iterable<CSVRecord> records = CSVFormat.DEFAULT.withDelimiter(';').parse(in);
+//		Iterable<CSVRecord> records = CSVFormat.DEFAULT.withFirstRecordAsHeader().withDelimiter(';').parse(in);
 
 		for (CSVRecord record : records) {
 			String id = record.get(0);
@@ -90,18 +156,49 @@ public class HandicapReadJumping {
 		}
 	}
 
-	private static void readHandicap2018() throws Exception {
-		String fileProef = DIRECTORY_OUTPUT + "new_export_" + vorige_jumping + ".csv";
+	private static String getLatestJumpingFile() {
+		File diretory = new File(DIRECTORY_BACKUP);
+
+		FileFilter fileFilter = new FileFilter() {
+			@Override
+			public boolean accept(File pathname) {
+				return pathname.getAbsoluteFile().getName().startsWith("export");
+			}
+		};
+		File[] filteredFiles = diretory.listFiles(fileFilter);
+		Arrays.sort(filteredFiles);
+		return filteredFiles[filteredFiles.length - 1].getName();
+	}
+
+	private static String getLatesPaardvanhetjaarFile() {
+		File diretory = new File(DIRECTORY_BACKUP);
+
+		FileFilter fileFilter = new FileFilter() {
+			@Override
+			public boolean accept(File pathname) {
+				return pathname.getAbsoluteFile().getName().startsWith("paardvanhetjaar");
+			}
+		};
+		File[] filteredFiles = diretory.listFiles(fileFilter);
+		Arrays.sort(filteredFiles);
+		return filteredFiles[filteredFiles.length - 1].getName();
+	}
+
+	private static void readPreviousJumping() throws Exception {
+		LOG.info("Inlezen huidige handicap stand ...");
+
+		String filename = getLatestJumpingFile();
+		String fileProef = DIRECTORY_BACKUP + filename;
 
 		Reader in = new FileReader(fileProef);
 		Iterable<CSVRecord> records = CSVFormat.DEFAULT.withDelimiter(';').parse(in);
 
 		for (CSVRecord record : records) {
-			if (StringUtils.isEmpty( record.get(0).trim()) || StringUtils.isEmpty( record.get(1).trim())) {
+			if (StringUtils.isEmpty( record.get(0).trim()) || StringUtils.isEmpty( record.get(1).trim())
+				|| "rider".equalsIgnoreCase(record.get(0))) {
 				LOG.info("SKIP");
 				continue;
 			}
-
 
 			String ruiter = record.get(0);
 			String paard = record.get(1);
@@ -113,11 +210,11 @@ public class HandicapReadJumping {
 			nieuweHandicap2019_combinatie_handicao.put(ruiter + "_" + paard, handicap);
 		}
 
-		LOG.info("handicap : " + nieuweHandicap2019_combinatie_handicao.size());
+	//	LOG.info("handicap : " + nieuweHandicap2019_combinatie_handicao.size());
 	}
 
 	private static void readJumping(String jumping) throws Exception {
-		String fileProef = DIRECTORY_INPUT + "jumpings\\" + jumping + ".csv";
+		String fileProef = DIRECTORY_INPUT + "jumpings/" + jumping + ".csv";
 
 		Reader in = new FileReader(fileProef);
 		Iterable<CSVRecord> records = CSVFormat.DEFAULT.withFirstRecordAsHeader().withDelimiter(';').parse(in);
@@ -202,15 +299,15 @@ public class HandicapReadJumping {
 
 		}
 
-		LOG.info("i : " + i);
+	//	LOG.info("i : " + i);
 
-		printPunten(jumpingPunten);
+		printPunten(jumping, jumpingPunten);
 		exportPunten(jumping, jumpingPunten);
-		exportPaardVanHetJaar();
+		exportPaardVanHetJaar(jumping);
 	}
 
 	private static void readPaardVanHetJaar() throws Exception {
-		String exportPaard = DIRECTORY_OUTPUT + "paardvanhetjaar.csv";
+		String exportPaard = DIRECTORY_BACKUP + getLatesPaardvanhetjaarFile();
 
 		Reader in = new FileReader(exportPaard);
 		Iterable<CSVRecord> records = CSVFormat.DEFAULT.withDelimiter(';').parse(in);
@@ -222,10 +319,12 @@ public class HandicapReadJumping {
 			paardVanHetJaar.put(ruiter + "_" + paard, punten);
 		}
 
-		LOG.info("paardvanhetjaar : " + paardVanHetJaar.size());
+	//	LOG.info("paardvanhetjaar : " + paardVanHetJaar.size());
 	}
 
-	private static void exportPaardVanHetJaar() throws Exception {
+	private static void exportPaardVanHetJaar(String jumping) throws Exception {
+		LOG.info("Exporteer paard/pony van het jaar..");
+
 		List<Handicap> paardVanHetJaarToExport = new ArrayList<>();
 
 		for (Map.Entry<String, Integer> pvhj : paardVanHetJaar.entrySet()) {
@@ -234,14 +333,22 @@ public class HandicapReadJumping {
 			paardVanHetJaarToExport.add(handicap);
 		}
 
-		String exportPaard = DIRECTORY_OUTPUT + "paardvanhetjaar.csv";
+		String exportPaard = DIRECTORY_OUTPUT + "paardvanhetjaar-" + jumping + "-" + getFileVersionNumber() + ".csv";
 		FileWriter out = new FileWriter(exportPaard);
 		try (CSVPrinter printer = new CSVPrinter(out, CSVFormat.DEFAULT)) {
 			printer.printRecords(paardVanHetJaarToExport);
 		}
+
+		String exportPaardBackuo = DIRECTORY_BACKUP + "paardvanhetjaar-" + jumping + "-" + getFileVersionNumber() + ".csv";
+		FileWriter ou2t = new FileWriter(exportPaardBackuo);
+		try (CSVPrinter printer2 = new CSVPrinter(ou2t, CSVFormat.DEFAULT)) {
+			printer2.printRecords(paardVanHetJaarToExport);
+		}
 	}
 
 	private static void exportPunten(String jumping, Map<String, List<Punten>> jumpingPunten) throws Exception {
+		LOG.info("Exporteer handicap..");
+
 		Map<String, Handicap> exportHandicapNaWedstrijd = new HashMap<>();
 
 		for (Map.Entry<String, List<Punten>> mapEntry : jumpingPunten.entrySet()) {
@@ -294,24 +401,51 @@ public class HandicapReadJumping {
 
 		}
 
-		String exportHandicap = DIRECTORY_OUTPUT + "new_export_" + jumping + ".csv";
+		String exportHandicap = DIRECTORY_OUTPUT + "export-" + jumping + "-" + getFileVersionNumber() + ".csv";
 		FileWriter out = new FileWriter(exportHandicap);
+
 		try (CSVPrinter printer = new CSVPrinter(out, CSVFormat.DEFAULT)) {
+			printer.print("rider;horse;points;serie");
+			printer.println();
 			printer.printRecords(exportHandicapNaWedstrijd.values());
+		}
+
+		String exportHandicapBackuo = DIRECTORY_BACKUP + "export-" + jumping + "-" + getFileVersionNumber() + ".csv";
+		FileWriter out2 = new FileWriter(exportHandicapBackuo);
+		try (CSVPrinter printe2r = new CSVPrinter(out2, CSVFormat.DEFAULT)) {
+			printe2r.printRecords(exportHandicapNaWedstrijd.values());
 		}
 	}
 
+	private static void printPunten(String jumping, Map<String, List<Punten>> jumpingPunten) throws Exception {
+		LOG.info("Wegschrijvan van punten..");
 
-	private static void printPunten(Map<String, List<Punten>> jumpingPunten) {
+		List<String> summaryList = new ArrayList<>();
 		for (Map.Entry<String, List<Punten>> mapEntry : jumpingPunten.entrySet()) {
 		//	LOG.info("START " + mapEntry.getKey());
 
 			for (Punten punten : mapEntry.getValue()) {
-				LOG.info(mapEntry.getKey() + punten.toString());
+				summaryList.add(mapEntry.getKey() + punten.toString());
+//				LOG.info(mapEntry.getKey() + punten.toString());
 			}
 
 		//	LOG.info("STOP " + mapEntry.getKey());
 		}
+
+/*
+		String exportHandicap = DIRECTORY_OUTPUT + "summary-" + jumping + "-" + getFileVersionNumber() + ".txt";
+		FileWriter out = new FileWriter(exportHandicap);
+		try (CSVPrinter printer = new CSVPrinter(out, CSVFormat.DEFAULT)) {
+			printer.printRecords(summaryList);
+		}
+*/
+
+		String exportHandicapBackup = DIRECTORY_BACKUP + "summary-" + jumping + "-" + getFileVersionNumber() + ".txt";
+		FileWriter out2 = new FileWriter(exportHandicapBackup);
+		try (CSVPrinter printer2 = new CSVPrinter(out2, CSVFormat.DEFAULT)) {
+			printer2.printRecords(summaryList);
+		}
+
 	}
 
 	private static void calculatePunten(int minimumPunten, int huidigePunten, int position, String jumpingProef, Punten punten) {
