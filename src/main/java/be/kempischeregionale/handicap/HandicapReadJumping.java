@@ -41,6 +41,11 @@ public class HandicapReadJumping {
 	public static Map<String, Integer> paardVanHetJaar = new HashMap<>();
 
 	public static void main(String[] args) throws Exception {
+		if (args.length != 1) {
+			LOG.error("Geef een jumpingnummer op !");
+			return;
+		}
+
 		String jumpingNummer = args[0];
 
 		if (StringUtils.isEmpty(jumpingNummer)) {
@@ -58,9 +63,14 @@ public class HandicapReadJumping {
 
 		readPaardVanHetJaar();
 
-		readJumping(jumpingNummer);
+		boolean success = readJumping(jumpingNummer);
 
-		LOG.info("Bestanden succesvol ge-exporteerd !");
+		if (success) {
+			LOG.info("Bestanden succesvol ge-exporteerd !");
+		} else {
+			LOG.info("Jumping niet correct ingelezen en verwerkt !");
+		}
+
 	}
 
 	private static void cleanupFolder() {
@@ -213,8 +223,14 @@ public class HandicapReadJumping {
 	//	LOG.info("handicap : " + nieuweHandicap2019_combinatie_handicao.size());
 	}
 
-	private static void readJumping(String jumping) throws Exception {
+	private static boolean readJumping(String jumping) throws Exception {
 		String fileProef = DIRECTORY_INPUT + "jumpings/" + jumping + ".csv";
+
+		File proefFile = new File(fileProef);
+		if (!proefFile.exists()) {
+			LOG.error("Jumping " + jumping + " kan niet gevonden worden onder " + DIRECTORY_INPUT + "jumpings");
+			return false;
+		}
 
 		Reader in = new FileReader(fileProef);
 		Iterable<CSVRecord> records = CSVFormat.DEFAULT.withFirstRecordAsHeader().withDelimiter(';').parse(in);
@@ -304,6 +320,8 @@ public class HandicapReadJumping {
 		printPunten(jumping, jumpingPunten);
 		exportPunten(jumping, jumpingPunten);
 		exportPaardVanHetJaar(jumping);
+
+		return true;
 	}
 
 	private static void readPaardVanHetJaar() throws Exception {
